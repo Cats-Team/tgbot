@@ -1,0 +1,15 @@
+services:
+  bot:
+    security_opt:
+      - seccomp=unconfined
+    build:
+      context: .
+      dockerfile: Dockerfile
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+    volumes:
+      - .:/app
+    restart: unless-stopped
