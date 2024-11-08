@@ -233,11 +233,11 @@ async def send_help_message(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         "/info \\- 显示机器人和规则更新的相关信息\n\n"
         "*可用类别：* /content, /dns, /all\n\n"
         "📌 示例：\n"
-        "/search /dns \\|\\|iqiyi\\.com^\n"
-        "/regex /content ^iqiyi\\.com\\$\n"
+        "`/search /dns ||iqiyi.com^`\n"
+        "`/regex /content ^iqiyi.com$`\n"
         "\n"
         "*注意：* 类别参数是可选的，默认为 /all。"
-        "\n\n*V1\\.3*"
+        "\n\n*V1\\.3\\.1*"
     )
     if update.message:
         messages = split_message(help_text)
@@ -265,7 +265,7 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     if len(context.args) < 1:
         if update.message:
-            await update.message.reply_text('用法：/search /类别 关键词。例如：/search /dns \\|\\|iqiyi\\.com^\n类别参数是可选的，默认为 /all。', parse_mode=ParseMode.MARKDOWN_V2)
+            await update.message.reply_text('用法：`/search /类别 关键词`。例如：`/search /dns \\|\\|iqiyi\\.com^`\n类别参数是可选的，默认为 /all。', parse_mode=ParseMode.MARKDOWN_V2)
         else:
             logger.warning("无法发送消息，因为 update.message 为 None")
         return
@@ -291,7 +291,7 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if not keyword:
         if update.message:
-            await update.message.reply_text('请提供要搜索的关键词。例如：/search \\|\\|iqiyi\\.com^', parse_mode=ParseMode.MARKDOWN_V2)
+            await update.message.reply_text('请提供要搜索的关键词。例如：`/search \\|\\|iqiyi\\.com^`', parse_mode=ParseMode.MARKDOWN_V2)
         else:
             logger.warning("无法发送消息，因为 update.message 为 None")
         return
@@ -316,7 +316,7 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 found_results[cat][url] = matching_lines
 
     if found_results:
-        response = f"*搜索类别：*/{escape_markdown(category, version=2)}\n*关键词：*{escape_markdown(keyword, version=2)}\n\n"
+        response = f"*搜索类别：*/{escape_markdown(category, version=2)}\n*关键词：*`{escape_markdown(keyword, version=2)}`\n\n"
         for cat, urls in found_results.items():
             response += f"*{escape_markdown(cat, version=2)}*:\n\n"
             for url, matches in urls.items():
@@ -330,7 +330,7 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     response += f"> *{line_num}:*\n> `{line_content_escaped}`\n\n"
             response += "\n"  # 添加空行以分隔不同类别
     else:
-        response = f"在类别 /{escape_markdown(category, version=2)} 中未找到包含关键词 '{escape_markdown(keyword, version=2)}' 的过滤规则 URL。"
+        response = f"在类别 /{escape_markdown(category, version=2)} 中未找到包含关键词 '`{escape_markdown(keyword, version=2)}`' 的过滤规则 URL。"
 
     # 拆分消息
     messages = split_message(response)
@@ -354,7 +354,7 @@ async def regex_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     """
     if len(context.args) < 1:
         if update.message:
-            await update.message.reply_text('用法：/regex /类别 正则表达式。例如：/regex /content ^iqiyi\\.com$\n类别参数是可选的，默认为 /all。', parse_mode=ParseMode.MARKDOWN_V2)
+            await update.message.reply_text('用法：`/regex /类别 正则表达式`。例如：`/regex /content ^iqiyi\\.com$`\n类别参数是可选的，默认为 /all。', parse_mode=ParseMode.MARKDOWN_V2)
         else:
             logger.warning("无法发送消息，因为 update.message 为 None")
         return
@@ -380,7 +380,7 @@ async def regex_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     if not pattern:
         if update.message:
-            await update.message.reply_text('请提供要搜索的正则表达式。例如：/regex ^iqiyi\\.com$', parse_mode=ParseMode.MARKDOWN_V2)
+            await update.message.reply_text('请提供要搜索的正则表达式。例如：`/regex ^iqiyi\\.com$`', parse_mode=ParseMode.MARKDOWN_V2)
         else:
             logger.warning("无法发送消息，因为 update.message 为 None")
         return
@@ -416,7 +416,7 @@ async def regex_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     if found_results:
         escaped_pattern = escape_markdown(pattern, version=2)
-        response = f"*正则表达式搜索类别：*/{escape_markdown(category, version=2)}\n*正则表达式：*{escaped_pattern}\n\n"
+        response = f"*正则表达式搜索类别：*/{escape_markdown(category, version=2)}\n*正则表达式：*`{escaped_pattern}`\n\n"
         for cat, urls in found_results.items():
             response += f"*{escape_markdown(cat, version=2)}*:\n\n"
             for url, matches in urls.items():
@@ -431,7 +431,7 @@ async def regex_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             response += "\n"  # 添加空行以分隔不同类别
     else:
         escaped_pattern = escape_markdown(pattern, version=2)
-        response = f"在类别 /{escape_markdown(category, version=2)} 中未找到符合正则表达式 '{escaped_pattern}' 的过滤规则 URL。"
+        response = f"在类别 /{escape_markdown(category, version=2)} 中未找到符合正则表达式 '`{escaped_pattern}`' 的过滤规则 URL。"
 
     # 拆分消息
     messages = split_message(response)
@@ -488,7 +488,7 @@ async def xinfo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             masked_uid = uid_str[:2] + '*' * (len(uid_str) - 4) + uid_str[-2:]
         # 检查是否为管理员
         if is_user_admin(user_id):
-            masked_uid += ' ★'  # 添加管理员标记
+            masked_uid += ' #'  # 添加管理员标记
         return masked_uid
 
     # 获取一小时内使用过的用户ID列表
@@ -513,7 +513,7 @@ async def xinfo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"*规则文件数量：*\n"
     )
     for category, count in category_counts.items():
-        response += f"{escape_markdown(category, version=2)}：{count}\n"
+        response += f"`{escape_markdown(category, version=2)}：{count}`\n"
 
     response += "\n"
     response += "*一小时内使用过的用户ID列表：*\n"
