@@ -46,6 +46,8 @@ ARCHIVE_URL = 'https://github.com/Cats-Team/upstream-artifacts/raw/refs/heads/ma
 
 # 数据库文件路径
 DB_PATH = os.getenv('DB_PATH', 'url_contents.db')
+# 数据库批量插入大小
+DB_BATCH_SIZE = 100
 
 # 只在内存中保留 URL 列表，结构为 {类别名称: [url1, url2, ...], ...}
 url_list = {}
@@ -91,11 +93,6 @@ def init_database():
                 content TEXT NOT NULL,
                 PRIMARY KEY (category, url)
             )
-        ''')
-        
-        # 创建索引以加速搜索
-        cursor.execute('''
-            CREATE INDEX IF NOT EXISTS idx_category ON url_contents(category)
         ''')
         
         conn.commit()
@@ -278,7 +275,6 @@ async def download_and_parse_archive(archive_url: str):
                     members = tar.getmembers()
                     # 用于批量插入数据库的列表（分批插入以避免内存峰值）
                     batch_data = []
-                    batch_size = 100  # 每100条记录插入一次
                     # 用于内存中保留的 URL 列表
                     temp_url_list = {}
                     
@@ -316,7 +312,7 @@ async def download_and_parse_archive(archive_url: str):
                                         temp_url_list[category].append(url)
                                         
                                         # 分批插入数据库以避免内存峰值
-                                        if len(batch_data) >= batch_size:
+                                        if len(batch_data) >= DB_BATCH_SIZE:
                                             insert_url_contents_batch(batch_data)
                                             total_records += len(batch_data)
                                             batch_data = []  # 清空批次
