@@ -80,105 +80,98 @@ def init_database():
     """
     初始化 SQLite 数据库，创建表和索引
     """
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    # 创建表
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS url_contents (
-            category TEXT NOT NULL,
-            url TEXT NOT NULL,
-            content TEXT NOT NULL,
-            PRIMARY KEY (category, url)
-        )
-    ''')
-    
-    # 创建索引以加速搜索
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_category ON url_contents(category)
-    ''')
-    
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        
+        # 创建表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS url_contents (
+                category TEXT NOT NULL,
+                url TEXT NOT NULL,
+                content TEXT NOT NULL,
+                PRIMARY KEY (category, url)
+            )
+        ''')
+        
+        # 创建索引以加速搜索
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_category ON url_contents(category)
+        ''')
+        
+        conn.commit()
     logger.info(f"数据库初始化完成: {DB_PATH}")
 
 def clear_database():
     """
     清空数据库中的所有数据
     """
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('DELETE FROM url_contents')
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM url_contents')
+        conn.commit()
 
 def insert_url_content(category: str, url: str, content: str):
     """
     插入或替换 URL 内容到数据库
     """
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT OR REPLACE INTO url_contents (category, url, content)
-        VALUES (?, ?, ?)
-    ''', (category, url, content))
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT OR REPLACE INTO url_contents (category, url, content)
+            VALUES (?, ?, ?)
+        ''', (category, url, content))
+        conn.commit()
 
 def insert_url_contents_batch(data: list):
     """
     批量插入 URL 内容到数据库
     参数: data - [(category, url, content), ...]
     """
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.executemany('''
-        INSERT OR REPLACE INTO url_contents (category, url, content)
-        VALUES (?, ?, ?)
-    ''', data)
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.executemany('''
+            INSERT OR REPLACE INTO url_contents (category, url, content)
+            VALUES (?, ?, ?)
+        ''', data)
+        conn.commit()
 
 def get_url_content(category: str, url: str) -> str:
     """
     从数据库获取指定 URL 的内容
     """
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT content FROM url_contents
-        WHERE category = ? AND url = ?
-    ''', (category, url))
-    result = cursor.fetchone()
-    conn.close()
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT content FROM url_contents
+            WHERE category = ? AND url = ?
+        ''', (category, url))
+        result = cursor.fetchone()
     return result[0] if result else ""
 
 def get_all_urls_by_category(category: str) -> list:
     """
     获取指定类别的所有 URL 列表
     """
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT url FROM url_contents
-        WHERE category = ?
-    ''', (category,))
-    results = cursor.fetchall()
-    conn.close()
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT url FROM url_contents
+            WHERE category = ?
+        ''', (category,))
+        results = cursor.fetchall()
     return [row[0] for row in results]
 
 def count_urls_by_category(category: str) -> int:
     """
     统计指定类别的 URL 数量
     """
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT COUNT(*) FROM url_contents
-        WHERE category = ?
-    ''', (category,))
-    result = cursor.fetchone()
-    conn.close()
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT COUNT(*) FROM url_contents
+            WHERE category = ?
+        ''', (category,))
+        result = cursor.fetchone()
     return result[0] if result else 0
 
 def search_content_by_keyword(category: str, keyword: str) -> list:
@@ -186,14 +179,13 @@ def search_content_by_keyword(category: str, keyword: str) -> list:
     在数据库中搜索包含关键词的内容
     返回: [(url, content), ...]
     """
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT url, content FROM url_contents
-        WHERE category = ? AND content LIKE ?
-    ''', (category, f'%{keyword}%'))
-    results = cursor.fetchall()
-    conn.close()
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT url, content FROM url_contents
+            WHERE category = ? AND content LIKE ?
+        ''', (category, f'%{keyword}%'))
+        results = cursor.fetchall()
     return results
 
 def get_all_contents_by_category(category: str) -> list:
@@ -201,14 +193,13 @@ def get_all_contents_by_category(category: str) -> list:
     获取指定类别的所有 URL 和内容
     返回: [(url, content), ...]
     """
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT url, content FROM url_contents
-        WHERE category = ?
-    ''', (category,))
-    results = cursor.fetchall()
-    conn.close()
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT url, content FROM url_contents
+            WHERE category = ?
+        ''', (category,))
+        results = cursor.fetchall()
     return results
 
 def log_user_command(func):
@@ -285,11 +276,16 @@ async def download_and_parse_archive(archive_url: str):
             with io.BytesIO(archive_data) as archive_io:
                 with tarfile.open(fileobj=archive_io, mode='r:gz') as tar:
                     members = tar.getmembers()
-                    # 用于批量插入数据库的列表
+                    # 用于批量插入数据库的列表（分批插入以避免内存峰值）
                     batch_data = []
+                    batch_size = 100  # 每100条记录插入一次
                     # 用于内存中保留的 URL 列表
                     temp_url_list = {}
                     
+                    # 清空数据库准备插入新数据
+                    clear_database()
+                    
+                    total_records = 0
                     for member in members:
                         if member.isfile():
                             file_path = member.name
@@ -319,15 +315,23 @@ async def download_and_parse_archive(archive_url: str):
                                             temp_url_list[category] = []
                                         temp_url_list[category].append(url)
                                         
+                                        # 分批插入数据库以避免内存峰值
+                                        if len(batch_data) >= batch_size:
+                                            insert_url_contents_batch(batch_data)
+                                            total_records += len(batch_data)
+                                            batch_data = []  # 清空批次
+                                            gc.collect()  # 触发垃圾回收
+                                        
                                         logger.info(f"加载 {category} 类别的 URL: {url}")
                                     else:
                                         logger.warning(f"文件 {file_path} 的第一行未找到 URL 信息。")
                     
-                    # 清空数据库并批量插入新数据
-                    clear_database()
+                    # 插入剩余的数据
                     if batch_data:
                         insert_url_contents_batch(batch_data)
-                        logger.info(f"成功插入 {len(batch_data)} 条记录到数据库")
+                        total_records += len(batch_data)
+                    
+                    logger.info(f"成功插入 {total_records} 条记录到数据库")
                     
                     # 更新内存中的 URL 列表
                     url_list.clear()
