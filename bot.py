@@ -799,8 +799,7 @@ async def sysinf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     # 获取数据库文件大小
     db_size = 0
-    db_exists = os.path.exists(DB_PATH)
-    if db_exists:
+    if os.path.exists(DB_PATH):
         db_size = os.path.getsize(DB_PATH)
 
     # 对变量进行转义
