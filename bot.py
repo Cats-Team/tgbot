@@ -796,6 +796,12 @@ async def sysinf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     swap = psutil.swap_memory()
     cpu_percent = psutil.cpu_percent(interval=1)
     disk = psutil.disk_usage('/')
+    
+    # 获取数据库文件大小
+    db_size = 0
+    db_exists = os.path.exists(DB_PATH)
+    if db_exists:
+        db_size = os.path.getsize(DB_PATH)
 
     # 对变量进行转义
     cpu_percent_escaped = escape_markdown(str(cpu_percent), version=2)
@@ -808,6 +814,7 @@ async def sysinf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     disk_used_escaped = escape_markdown(psutil._common.bytes2human(disk.used), version=2)
     disk_total_escaped = escape_markdown(psutil._common.bytes2human(disk.total), version=2)
     disk_percent_escaped = escape_markdown(str(disk.percent), version=2)
+    db_size_escaped = escape_markdown(psutil._common.bytes2human(db_size), version=2)
 
     # 构建响应消息，手动转义静态文本中的特殊字符
     response = (
@@ -819,6 +826,7 @@ async def sysinf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"\\({swap_percent_escaped}%\\)\n"
         f"磁盘使用：{disk_used_escaped} / {disk_total_escaped} "
         f"\\({disk_percent_escaped}%\\)\n"
+        f"数据库文件大小：{db_size_escaped}\n"
     )
 
     # 发送响应消息
