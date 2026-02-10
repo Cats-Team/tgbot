@@ -7,6 +7,7 @@ import sys
 import tarfile
 import io
 import gc  # 导入垃圾回收模块
+import sqlite3
 from functools import wraps
 from urllib.parse import urlparse
 from telegram import Update
@@ -43,8 +44,13 @@ ADMIN_IDS = [int(uid.strip()) for uid in ADMIN_USER_IDS.split(',') if uid.strip(
 # 压缩包的下载链接
 ARCHIVE_URL = 'https://github.com/Cats-Team/upstream-artifacts/raw/refs/heads/main/archive.tar.gz'
 
-# 存储 URL 内容，结构为 {类别名称: {url: content, ...}, ...}
-url_contents = {}
+# 数据库文件路径
+DB_PATH = os.getenv('DB_PATH', 'url_contents.db')
+# 数据库批量插入大小
+DB_BATCH_SIZE = 100
+
+# 只在内存中保留 URL 列表，结构为 {类别名称: [url1, url2, ...], ...}
+url_list = {}
 
 # 定义有效的类别，包括 'all'
 VALID_CATEGORIES = ['content', 'dns', 'all']
@@ -70,6 +76,128 @@ try:
 except ImportError:
     psutil = None
     logger.error("psutil 模块未安装，/sysinf 命令将不可用。")
+
+# 数据库初始化和辅助函数
+def init_database():
+    """
+    初始化 SQLite 数据库，创建表和索引
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        
+        # 创建表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS url_contents (
+                category TEXT NOT NULL,
+                url TEXT NOT NULL,
+                content TEXT NOT NULL,
+                PRIMARY KEY (category, url)
+            )
+        ''')
+        
+        conn.commit()
+    logger.info(f"数据库初始化完成: {DB_PATH}")
+
+def clear_database():
+    """
+    清空数据库中的所有数据
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM url_contents')
+        conn.commit()
+
+def insert_url_content(category: str, url: str, content: str):
+    """
+    插入或替换 URL 内容到数据库
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT OR REPLACE INTO url_contents (category, url, content)
+            VALUES (?, ?, ?)
+        ''', (category, url, content))
+        conn.commit()
+
+def insert_url_contents_batch(data: list):
+    """
+    批量插入 URL 内容到数据库
+    参数: data - [(category, url, content), ...]
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.executemany('''
+            INSERT OR REPLACE INTO url_contents (category, url, content)
+            VALUES (?, ?, ?)
+        ''', data)
+        conn.commit()
+
+def get_url_content(category: str, url: str) -> str:
+    """
+    从数据库获取指定 URL 的内容
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT content FROM url_contents
+            WHERE category = ? AND url = ?
+        ''', (category, url))
+        result = cursor.fetchone()
+    return result[0] if result else ""
+
+def get_all_urls_by_category(category: str) -> list:
+    """
+    获取指定类别的所有 URL 列表
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT url FROM url_contents
+            WHERE category = ?
+        ''', (category,))
+        results = cursor.fetchall()
+    return [row[0] for row in results]
+
+def count_urls_by_category(category: str) -> int:
+    """
+    统计指定类别的 URL 数量
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT COUNT(*) FROM url_contents
+            WHERE category = ?
+        ''', (category,))
+        result = cursor.fetchone()
+    return result[0] if result else 0
+
+def search_content_by_keyword(category: str, keyword: str) -> list:
+    """
+    在数据库中搜索包含关键词的内容
+    返回: [(url, content), ...]
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT url, content FROM url_contents
+            WHERE category = ? AND content LIKE ?
+        ''', (category, f'%{keyword}%'))
+        results = cursor.fetchall()
+    return results
+
+def get_all_contents_by_category(category: str) -> list:
+    """
+    获取指定类别的所有 URL 和内容
+    返回: [(url, content), ...]
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT url, content FROM url_contents
+            WHERE category = ?
+        ''', (category,))
+        results = cursor.fetchall()
+    return results
 
 def log_user_command(func):
     """
@@ -131,9 +259,9 @@ async def download_archive(session: aiohttp.ClientSession, url: str) -> bytes:
 
 async def download_and_parse_archive(archive_url: str):
     """
-    下载压缩包并解析其中的文件，将内容存储到 `url_contents` 中。
+    下载压缩包并解析其中的文件，将内容存储到 SQLite 数据库中。
     """
-    global url_contents, last_update_time, initial_load_time
+    global url_list, last_update_time, initial_load_time
     async with aiohttp.ClientSession() as session:
         archive_data = await download_archive(session, archive_url)
         if not archive_data:
@@ -145,7 +273,15 @@ async def download_and_parse_archive(archive_url: str):
             with io.BytesIO(archive_data) as archive_io:
                 with tarfile.open(fileobj=archive_io, mode='r:gz') as tar:
                     members = tar.getmembers()
-                    temp_url_contents = {}
+                    # 用于批量插入数据库的列表（分批插入以避免内存峰值）
+                    batch_data = []
+                    # 用于内存中保留的 URL 列表
+                    temp_url_list = {}
+                    
+                    # 清空数据库准备插入新数据
+                    clear_database()
+                    
+                    total_records = 0
                     for member in members:
                         if member.isfile():
                             file_path = member.name
@@ -166,18 +302,38 @@ async def download_and_parse_archive(archive_url: str):
                                     if url_match:
                                         url = url_match.group(1)
                                         content = '\n'.join(lines[1:])  # 剩余内容
-                                        if category not in temp_url_contents:
-                                            temp_url_contents[category] = {}
-                                        temp_url_contents[category][url] = content
+                                        
+                                        # 添加到批量插入列表
+                                        batch_data.append((category, url, content))
+                                        
+                                        # 添加到内存 URL 列表
+                                        if category not in temp_url_list:
+                                            temp_url_list[category] = []
+                                        temp_url_list[category].append(url)
+                                        
+                                        # 分批插入数据库以避免内存峰值
+                                        if len(batch_data) >= DB_BATCH_SIZE:
+                                            insert_url_contents_batch(batch_data)
+                                            total_records += len(batch_data)
+                                            batch_data = []  # 清空批次
+                                            gc.collect()  # 触发垃圾回收
+                                        
                                         logger.info(f"加载 {category} 类别的 URL: {url}")
                                     else:
                                         logger.warning(f"文件 {file_path} 的第一行未找到 URL 信息。")
-                    # 手动删除旧的 url_contents 数据并调用垃圾回收
-                    if url_contents:
-                        del url_contents
-                        gc.collect()
-                    # 更新全局 url_contents
-                    url_contents = temp_url_contents
+                    
+                    # 插入剩余的数据
+                    if batch_data:
+                        insert_url_contents_batch(batch_data)
+                        total_records += len(batch_data)
+                    
+                    logger.info(f"成功插入 {total_records} 条记录到数据库")
+                    
+                    # 更新内存中的 URL 列表
+                    url_list.clear()
+                    url_list.update(temp_url_list)
+                    gc.collect()
+                    
                     # 更新最后更新时间
                     last_update_time = datetime.now()
                     # 如果 initial_load_time 尚未设置，则设置为当前时间
@@ -302,7 +458,9 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     categories_to_search = VALID_CATEGORIES[:-1] if category == 'all' else [category]
 
     for cat in categories_to_search:
-        for url, content in url_contents.get(cat, {}).items():
+        # 从数据库获取所有 URL 和内容
+        results = get_all_contents_by_category(cat)
+        for url, content in results:
             if not content:
                 continue
             lines = content.splitlines()
@@ -401,7 +559,9 @@ async def regex_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     categories_to_search = VALID_CATEGORIES[:-1] if category == 'all' else [category]
 
     for cat in categories_to_search:
-        for url, content in url_contents.get(cat, {}).items():
+        # 从数据库获取所有 URL 和内容
+        results = get_all_contents_by_category(cat)
+        for url, content in results:
             if not content:
                 continue
             lines = content.splitlines()
@@ -477,7 +637,7 @@ async def xinfo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # 获取每个类别的文件数量
     category_counts = {}
     for category in VALID_CATEGORIES[:-1]:  # Exclude 'all'
-        category_counts[category] = len(url_contents.get(category, {}))
+        category_counts[category] = count_urls_by_category(category)
 
     # 格式化用户ID
     def format_user_id(user_id):
@@ -636,6 +796,11 @@ async def sysinf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     swap = psutil.swap_memory()
     cpu_percent = psutil.cpu_percent(interval=1)
     disk = psutil.disk_usage('/')
+    
+    # 获取数据库文件大小
+    db_size = 0
+    if os.path.exists(DB_PATH):
+        db_size = os.path.getsize(DB_PATH)
 
     # 对变量进行转义
     cpu_percent_escaped = escape_markdown(str(cpu_percent), version=2)
@@ -648,6 +813,7 @@ async def sysinf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     disk_used_escaped = escape_markdown(psutil._common.bytes2human(disk.used), version=2)
     disk_total_escaped = escape_markdown(psutil._common.bytes2human(disk.total), version=2)
     disk_percent_escaped = escape_markdown(str(disk.percent), version=2)
+    db_size_escaped = escape_markdown(psutil._common.bytes2human(db_size), version=2)
 
     # 构建响应消息，手动转义静态文本中的特殊字符
     response = (
@@ -659,6 +825,7 @@ async def sysinf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"\\({swap_percent_escaped}%\\)\n"
         f"磁盘使用：{disk_used_escaped} / {disk_total_escaped} "
         f"\\({disk_percent_escaped}%\\)\n"
+        f"数据库文件大小：{db_size_escaped}\n"
     )
 
     # 发送响应消息
@@ -701,12 +868,16 @@ async def periodic_update(archive_url: str):
             logger.info("将等待1小时后再尝试更新。")
 
 async def main():
-    global url_contents, initial_load_time
+    global url_list, initial_load_time
 
     # 检查 BOT_TOKEN 是否设置
     if not BOT_TOKEN:
         logger.error("未设置 TELEGRAM_BOT_TOKEN 环境变量。")
         sys.exit(1)
+
+    # 初始化数据库
+    logger.info("初始化数据库...")
+    init_database()
 
     # 下载并解析压缩包
     logger.info("开始下载并解析压缩包...")
@@ -715,7 +886,7 @@ async def main():
     except Exception as e:
         logger.critical(f"未能下载压缩包。程序即将终止。错误信息：{e}")
         sys.exit(1)
-    logger.info("所有 URL 内容已加载。")
+    logger.info("所有 URL 内容已加载到数据库。")
 
     # 初始化机器人
     application = ApplicationBuilder().token(BOT_TOKEN).build()
