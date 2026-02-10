@@ -172,12 +172,10 @@ async def download_and_parse_archive(archive_url: str):
                                         logger.info(f"加载 {category} 类别的 URL: {url}")
                                     else:
                                         logger.warning(f"文件 {file_path} 的第一行未找到 URL 信息。")
-                    # 手动删除旧的 url_contents 数据并调用垃圾回收
-                    if url_contents:
-                        del url_contents
-                        gc.collect()
-                    # 更新全局 url_contents
-                    url_contents = temp_url_contents
+                    # 修复内存泄漏：先清空再更新
+                    url_contents.clear()
+                    url_contents.update(temp_url_contents)
+                    gc.collect()
                     # 更新最后更新时间
                     last_update_time = datetime.now()
                     # 如果 initial_load_time 尚未设置，则设置为当前时间
